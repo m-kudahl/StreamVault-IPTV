@@ -47,6 +47,8 @@ class EpgResolutionEngine @Inject constructor(
         private const val TAG = "EpgResolutionEngine"
         private const val LOW_CONFIDENCE_THRESHOLD = 0.7f
         private const val MAX_REMATCH_ATTEMPTS = 6
+        // Matches the chunk size EpgRepositoryImpl already uses for the same table.
+        private const val EPG_CHANNEL_LOOKUP_CHUNK_SIZE = 500
     }
 
     /**
@@ -109,7 +111,15 @@ class EpgResolutionEngine @Inject constructor(
         // Check which channels have provider-native EPG data
         val providerEpgChannelIds = channels.mapNotNull { it.epgChannelId?.trim()?.takeIf(String::isNotEmpty) }
         val providerNativeChannelIds = if (providerEpgChannelIds.isNotEmpty()) {
-            programDao.getChannelIdsWithPrograms(providerId, providerEpgChannelIds).toHashSet()
+            // SQLite's bind-variable cap is 999 on older Android; a provider with more
+            // than that many EPG-tagged channels otherwise blows up the whole lookup.
+            if (providerEpgChannelIds.size <= EPG_CHANNEL_LOOKUP_CHUNK_SIZE) {
+                programDao.getChannelIdsWithPrograms(providerId, providerEpgChannelIds)
+            } else {
+                providerEpgChannelIds.chunked(EPG_CHANNEL_LOOKUP_CHUNK_SIZE).flatMap { chunk ->
+                    programDao.getChannelIdsWithPrograms(providerId, chunk)
+                }
+            }.toHashSet()
         } else {
             emptySet()
         }

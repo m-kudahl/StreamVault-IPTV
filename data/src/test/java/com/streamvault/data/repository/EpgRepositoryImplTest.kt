@@ -588,7 +588,10 @@ class EpgRepositoryImplTest {
         whenever(xmltvParser.parseStreaming(any(), anyOrNull(), any())).thenAnswer { invocation ->
             val onProgram = invocation.getArgument<suspend (Program) -> Unit>(2)
             runBlocking {
-                repeat(600) { index ->
+                // Must exceed EPG_PROGRAM_BATCH_SIZE (5000) so the staging path still
+                // performs a mid-parse flush plus a final flush, i.e. more than one
+                // short insert transaction. Raise this if that constant grows again.
+                repeat(6000) { index ->
                     parserCallbackTransactionDepths += transactionDepth
                     onProgram(
                         Program(
@@ -619,7 +622,7 @@ class EpgRepositoryImplTest {
 
         assertThat(result.isSuccess).isTrue()
         assertThat(transactionCount).isEqualTo(4)
-        assertThat(parserCallbackTransactionDepths).hasSize(600)
+        assertThat(parserCallbackTransactionDepths).hasSize(6000)
         assertThat(parserCallbackTransactionDepths.all { it == 0 }).isTrue()
         assertThat(insertTransactionDepths).isNotEmpty()
         assertThat(insertTransactionDepths.all { it > 0 }).isTrue()
