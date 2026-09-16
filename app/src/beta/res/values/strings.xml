@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Build-type source sets override main/. Distinguishes this fork build from an
+         official StreamVault install on the same device: they are separate packages
+         (applicationIdSuffix ".beta") but would otherwise share a launcher label. -->
+    <string name="app_name">StreamVault Fork</string>
+</resources>
