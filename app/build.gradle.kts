@@ -165,6 +165,18 @@ kotlin {
     }
 }
 
+// Stages a release-ready, versioned APK at <repo>/dist/ so the artifact uploaded to
+// a GitHub release is self-describing rather than the generic "app-beta.apk".
+// Run: ./gradlew :app:stageBetaApk
+tasks.register<Copy>("stageBetaApk") {
+    dependsOn("assembleBeta")
+    from(layout.buildDirectory.dir("outputs/apk/beta")) {
+        include("*.apk")
+    }
+    into(rootProject.layout.projectDirectory.dir("dist"))
+    rename { "StreamVault-Fork-${android.defaultConfig.versionName}-beta.apk" }
+}
+
 composeCompiler {
     // Marks cross-module immutable classes (domain models, java.time) as stable so
     // composables taking them as parameters can skip recomposition. See
