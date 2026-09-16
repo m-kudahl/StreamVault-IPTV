@@ -71,6 +71,7 @@ private val QUALITY_CLEANUP_REGEX = Regex(
     RegexOption.IGNORE_CASE
 )
 private val NON_ALPHANUMERIC_REGEX = Regex("""[^a-z0-9]+""")
+private val NON_ASCII_REGEX = Regex("[^\\u0000-\\u007F]")
 
 data class MoviePresentationSettings(
     val duplicateHandlingMode: VodDuplicateHandlingMode,
@@ -302,10 +303,16 @@ private fun normalizedMovieTitle(value: String): String {
     val withoutProviderPrefix = value.substringAfter(" - ", value)
     val withoutYearSuffix = YEAR_SUFFIX_REGEX.replace(withoutProviderPrefix, "")
     val withoutQuality = QUALITY_CLEANUP_REGEX.replace(withoutYearSuffix, " ")
-    val normalized = Normalizer.normalize(withoutQuality, Normalizer.Form.NFD)
-        .replace(Regex("\\p{Mn}+"), "")
-        .lowercase(Locale.ROOT)
-    return NON_ALPHANUMERIC_REGEX.replace(normalized, "").trim()
+    // Fast path: NFD normalization is the identity for pure ASCII and there are no
+    // combining marks to strip, so skip it. On API 25 that Normalizer call is a slow
+    // JNI hop into ICU4C, and the overwhelming majority of IPTV titles are ASCII.
+    val normalized = if (NON_ASCII_REGEX.containsMatchIn(withoutQuality)) {
+        Normalizer.normalize(withoutQuality, Normalizer.Form.NFD)
+            .replace(Regex("\\p{Mn}+"), "")
+    } else {
+        withoutQuality
+    }
+    return NON_ALPHANUMERIC_REGEX.replace(normalized.lowercase(Locale.ROOT), "").trim()
 }
 
 private fun movieDisplayYear(movie: Movie): Int? =
