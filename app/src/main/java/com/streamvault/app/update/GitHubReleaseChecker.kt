@@ -14,8 +14,13 @@ import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val GITHUB_RELEASES_LATEST_URL = "https://api.github.com/repos/Davidona/StreamVault-IPTV/releases/latest"
-private const val GITHUB_RELEASES_LIST_URL = "https://api.github.com/repos/Davidona/StreamVault-IPTV/releases?per_page=20"
+// Fork builds must check their OWN releases. Upstream APKs are signed with the
+// maintainer's key, so Android would refuse them as a signature-mismatched upgrade
+// -- the updater would offer an update that can never install. Single slug so
+// re-pointing (or rebasing onto upstream) is a one-line change.
+private const val GITHUB_RELEASES_REPO = "m-kudahl/StreamVault-IPTV"
+private const val GITHUB_RELEASES_LATEST_URL = "https://api.github.com/repos/$GITHUB_RELEASES_REPO/releases/latest"
+private const val GITHUB_RELEASES_LIST_URL = "https://api.github.com/repos/$GITHUB_RELEASES_REPO/releases?per_page=20"
 
 data class GitHubReleaseInfo(
     val versionName: String,
