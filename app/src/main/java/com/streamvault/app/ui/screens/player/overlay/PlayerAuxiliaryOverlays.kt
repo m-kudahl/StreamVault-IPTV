@@ -276,7 +276,10 @@ fun ChannelListOverlay(
                                 }
                             }
                         }
-                        items(channels.size) { index ->
+                        // Keyed by DB id: each row holds `remember { mutableStateOf(false) }`
+                        // focus state, which without a key binds to the index and bleeds to the
+                        // wrong channel when the list changes.
+                        items(channels.size, key = { channels[it].id }) { index ->
                             val channel = channels[index]
                             val isSelected = channel.id == currentChannelId
                             val shouldRequestFocus = isSelected
@@ -1072,7 +1075,8 @@ fun CategoryListOverlay(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp)
                             )
                         }
-                        items(categories.size) { index ->
+                        // Keyed by DB id; see the channel list above.
+                        items(categories.size, key = { categories[it].id }) { index ->
                             val category = categories[index]
                             val isSelected = category.id == currentCategoryId
                             val isLocked = isCategoryLocked(category)
