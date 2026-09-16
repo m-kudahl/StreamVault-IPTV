@@ -46,12 +46,19 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val PAIRING_SESSION_MS = 5 * 60 * 1_000L
 private const val PAIRING_QR_SIZE = 384
 private const val MAX_FORM_BYTES = 24 * 1024
+// How long the phone's HTTP request is held open awaiting provider validation before
+// we acknowledge it and let the TV finish. Validation performs live network round-trips
+// to the IPTV server and can outlast a mobile browser's own timeout, which would leave
+// the phone reporting a failure for a provider the TV actually accepted.
+private const val SUBMIT_FAST_RESPONSE_MS = 20_000L
 private const val TAG = "ProviderQrPairing"
 
 @Singleton
@@ -201,18 +208,51 @@ class ProviderQrPairingManager @Inject constructor(
                         status = ProviderQrPairingStatus.RECEIVING,
                         message = "Phone submitted provider details. Validating..."
                     )
-                    val saveResult = addProviderFromForm(form)
-                    when (saveResult) {
-                        is ProviderPairingSubmitResult.Success -> {
-                            writeHtml(client.getOutputStream(), 200, successPage(saveResult.providerName))
-                            invalidateAfterSuccess(saveResult.providerName)
+                    // Validation runs on the manager scope, not this request coroutine, so it
+                    // survives the phone abandoning the connection.
+                    val submission = scope.async { addProviderFromForm(form) }
+                    val fastResult = withTimeoutOrNull(SUBMIT_FAST_RESPONSE_MS) { submission.await() }
+                    if (fastResult != null) {
+                        // Fast path: byte-for-byte the previous behaviour.
+                        when (fastResult) {
+                            is ProviderPairingSubmitResult.Success -> {
+                                writeHtml(client.getOutputStream(), 200, successPage(fastResult.providerName))
+                                invalidateAfterSuccess(fastResult.providerName)
+                            }
+                            is ProviderPairingSubmitResult.Error -> {
+                                _state.value = _state.value.copy(
+                                    status = ProviderQrPairingStatus.READY,
+                                    message = fastResult.message
+                                )
+                                writeHtml(client.getOutputStream(), 400, errorPage(fastResult.message))
+                            }
                         }
-                        is ProviderPairingSubmitResult.Error -> {
-                            _state.value = _state.value.copy(
-                                status = ProviderQrPairingStatus.READY,
-                                message = saveResult.message
-                            )
-                            writeHtml(client.getOutputStream(), 400, errorPage(saveResult.message))
+                    } else {
+                        // Slow path: the browser would likely give up before validation ends.
+                        // Acknowledge now so the phone never reports a false failure, and let the
+                        // TV surface the real outcome via ProviderQrPairingState, which the setup
+                        // screen already observes (RECEIVING -> COMPLETE/ERROR).
+                        writeHtml(client.getOutputStream(), 200, pendingPage())
+                        scope.launch {
+                            runCatching { submission.await() }
+                                .onSuccess { result ->
+                                    when (result) {
+                                        is ProviderPairingSubmitResult.Success ->
+                                            invalidateAfterSuccess(result.providerName)
+                                        is ProviderPairingSubmitResult.Error ->
+                                            _state.value = _state.value.copy(
+                                                status = ProviderQrPairingStatus.READY,
+                                                message = result.message
+                                            )
+                                    }
+                                }
+                                .onFailure { error ->
+                                    Log.w(TAG, "Deferred pairing submission failed", error)
+                                    _state.value = _state.value.copy(
+                                        status = ProviderQrPairingStatus.READY,
+                                        message = error.message ?: "Could not add provider from phone."
+                                    )
+                                }
                         }
                     }
                 }
@@ -479,6 +519,12 @@ class ProviderQrPairingManager @Inject constructor(
         </script>
         </body>
         </html>
+    """.trimIndent()
+
+    private fun pendingPage(): String = """
+        <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#101820;color:#f8fafc;padding:28px}main{max-width:520px;margin:auto;background:#172635;border-radius:22px;padding:24px}h1{color:#32d6a0}p{color:#b9c6d3;line-height:1.45}</style>
+        </head><body><main><h1>Sent to TV</h1><p>Your provider details were received and are still being verified on the TV &mdash; this can take a while for large providers.</p><p>Check the TV screen for the result. You can close this page.</p></main></body></html>
     """.trimIndent()
 
     private fun successPage(providerName: String): String = """
