@@ -204,10 +204,9 @@ internal class XtreamAdaptiveSyncPolicy {
             return 0L
         }
         val health = providerHealth[providerId] ?: ProviderHealth()
-        val baseSpacingMs = when (stage) {
-            Stage.CATEGORY -> 250L
-            else -> 0L
-        }
+        // Healthy providers get no artificial spacing. The stress table below still
+        // paces requests as soon as a provider 403/429s or starts timing out, and
+        // recordFailure() escalates from the very first bad response.
         val stressSpacingMs = when {
             health.stressLevel >= 4 -> 900L
             health.stressLevel >= 3 -> 650L
@@ -215,7 +214,7 @@ internal class XtreamAdaptiveSyncPolicy {
             health.stressLevel >= 1 -> 200L
             else -> 0L
         }
-        return baseSpacingMs + stressSpacingMs
+        return stressSpacingMs
     }
 
     private fun messageContains(error: Throwable, needle: String): Boolean =

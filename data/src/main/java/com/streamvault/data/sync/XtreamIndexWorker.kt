@@ -128,7 +128,11 @@ class XtreamIndexWorker(
         private const val KEY_SECTION = "section"
         private const val KEY_FORCE = "force"
         private const val INVALID_PROVIDER_ID = -1L
-        private const val CATEGORY_SLICE_SIZE = 2
+        // ponytail: fixed category count, not an elapsed-time budget. At 2 a large
+        // provider needed hundreds of WorkManager dispatches to finish indexing.
+        // Switch to a wall-clock budget in the executor loop if slow providers start
+        // getting killed by WorkManager's ~10 min execution cap mid-slice.
+        private const val CATEGORY_SLICE_SIZE = 64
         private const val UNIQUE_LAUNCH_WORK_NAME = "xtream-index-launch-stale-check"
         private const val UNIQUE_PERIODIC_WORK_NAME = "xtream-index-periodic-worker"
 
